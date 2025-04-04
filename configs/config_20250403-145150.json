@@ -1,0 +1,18 @@
+{
+    "model_name": "ResNet50",
+    "data_path": "/home/chinchila/rodrigo/sbcas/datasets/ibrahim",
+    "image_size": [
+        224,
+        224
+    ],
+    "batch_size": 64,
+    "epochs": 100,
+    "k_folds": 5,
+    "learning_rate": 0.0001,
+    "early_stopping_patience": 10,
+    "reduce_lr_patience": 5,
+    "mixed_precision": true,
+    "dropout_rate": 0.1,
+    "save_dir": "./results",
+    "verbose": 1
+}
