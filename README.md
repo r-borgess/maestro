@@ -1,8 +1,8 @@
-# Maestro: Deep Learning Medical Image Classification Framework
+# Maestro
 
 ## Project Overview
 
-Maestro is a comprehensive, production-ready pipeline for training deep learning models for binary image classification, with a focus on medical imaging applications. It implements a stratified k-fold cross-validation approach using transfer learning with various pre-trained CNN architectures.
+Maestro is a comprehensive, production-ready pipeline for training deep learning models.
 
 ## Key Features
 
