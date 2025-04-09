@@ -12,15 +12,20 @@ class TrainingConfig:
     image_size: Tuple[int, int] = (224, 224)
     batch_size: int = 32
     epochs: int = 100
+    validation_strategy: str = "cross_validation"
     k_folds: int = 5
+    holdout_split: float = 0.2
+    test_split: float = 0.2
     learning_rate: float = 1e-4
-    dropout_rate: float = 0.5  # Added dropout_rate parameter with default
+    dropout_rate: float = 0.5
     verbose: int = 1
     early_stopping_patience: int = 10
     reduce_lr_patience: int = 5
     mixed_precision: bool = True
     save_dir: str = './results'
-    
+    resume_training: bool = False
+    start_fold: int = 0
+
     @classmethod
     def from_args(cls, args):
         return cls(
@@ -29,9 +34,12 @@ class TrainingConfig:
             image_size=tuple(args.image_size),
             batch_size=args.batch_size,
             epochs=args.epochs,
+            validation_strategy=args.validation_strategy,
             k_folds=args.k,
+            holdout_split=args.holdout_split,
+            test_split=args.test_split,
             learning_rate=args.learning_rate,
-            dropout_rate=args.dropout_rate,  # Added dropout_rate
+            dropout_rate=args.dropout_rate,
             verbose=args.verbose,
             early_stopping_patience=args.early_stopping_patience,
             reduce_lr_patience=args.reduce_lr_patience,
@@ -76,11 +84,19 @@ def parse_args():
                         help="Batch size for training")
     parser.add_argument('--epochs', type=int, default=100,
                         help="Maximum number of epochs to train")
+    # New validation strategy arguments
+    parser.add_argument('--validation-strategy', type=str, default="cross_validation",
+                        choices=["cross_validation", "holdout"],
+                        help="Validation strategy: cross_validation or holdout")
     parser.add_argument('--k', type=int, default=5,
-                        help="Number of folds for cross-validation")
+                        help="Number of folds for cross-validation (used when validation-strategy is cross_validation)")
+    parser.add_argument('--holdout-split', type=float, default=0.2,
+                        help="Proportion of training data to use for validation in holdout method")
+    parser.add_argument('--test-split', type=float, default=0.2,
+                        help="Proportion of data to use for testing")
     parser.add_argument('--learning-rate', type=float, default=1e-4,
                         help="Initial learning rate")
-    parser.add_argument('--dropout-rate', type=float, default=0.5,  # Added dropout-rate argument
+    parser.add_argument('--dropout-rate', type=float, default=0.5,
                         help="Dropout rate for regularization (0.0 to 1.0)")
     parser.add_argument('--verbose', type=int, default=1, choices=[0, 1, 2],
                         help="Verbosity level")
@@ -94,7 +110,11 @@ def parse_args():
                         help="Directory to save results")
     parser.add_argument('--config', type=str,
                         help="Path to config JSON file (overrides other arguments)")
-    
+    parser.add_argument('--resume', action='store_true',
+                    help="Resume training from saved checkpoint")
+    parser.add_argument('--start-fold', type=int, default=0,
+                        help="Fold to start from when resuming (only for cross-validation)")
+        
     args = parser.parse_args()
     
     # If config file is provided, load it and override CLI arguments

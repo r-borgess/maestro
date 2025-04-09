@@ -1,11 +1,16 @@
 import os
 import gc
 import time
+import json
 import logging
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from typing import Dict, Tuple, List, Any, Optional
+
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
 
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import (
@@ -57,6 +62,139 @@ class Trainer:
         
         # Set up distribution strategy
         self.strategy = self._setup_distribution_strategy()
+
+    def train(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Train model using either cross-validation or holdout method based on config
+        
+        Args:
+            df: DataFrame with image paths and labels
+            
+        Returns:
+            Dictionary with training metrics
+        """
+        logging.info(f"Using {self.config.validation_strategy} strategy")
+        
+        if self.config.validation_strategy == "cross_validation":
+            return self.train_with_cross_validation(df)
+        else:  # holdout
+            return self.train_with_holdout(df)
+
+    def train_with_holdout(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Train model using holdout method (simple train/val/test split)
+        
+        Args:
+            df: DataFrame with image paths and labels
+            
+        Returns:
+            Dictionary with training metrics
+        """
+        logging.info(f"Starting holdout training with {self.config.model_name}")
+        
+        # Encode labels
+        label_encoder = LabelEncoder()
+        df['encoded_label'] = label_encoder.fit_transform(df['label'])
+        class_mapping = {i: label for i, label in enumerate(label_encoder.classes_)}
+        
+        # Save class mapping
+        with open(os.path.join(self.experiment_dir, 'class_mapping.txt'), 'w') as f:
+            for idx, label in class_mapping.items():
+                f.write(f"{idx}: {label}\n")
+        
+        # First split into train+val and test sets      
+        train_val_df, test_df = train_test_split(
+            df, 
+            test_size=self.config.test_split, 
+            stratify=df['encoded_label'], 
+            random_state=42
+        )
+        
+        # Then split train+val into train and validation sets
+        train_df, val_df = train_test_split(
+            train_val_df,
+            test_size=self.config.holdout_split,
+            stratify=train_val_df['encoded_label'],
+            random_state=42
+        )
+        
+        logging.info(f"Data split: {len(train_df)} training samples, "
+                    f"{len(val_df)} validation samples, "
+                    f"{len(test_df)} test samples")
+        
+        # Create data generators
+        train_generator, val_generator, test_generator = self._create_data_generators(
+            train_df, val_df, test_df
+        )
+        
+        # Compute class weights
+        class_weights = self._compute_class_weights(train_df['encoded_label'].values)
+        
+        # Create callbacks
+        callbacks = self._create_callbacks(fold=0)  # Use fold=0 for single model training
+        
+        # Create model within strategy scope
+        with self.strategy.scope():
+            model = ModelFactory.create_model(
+                model_name=self.config.model_name,
+                input_shape=(*self.config.image_size, 3),
+                num_classes=1,  # Binary classification
+                dropout_rate=self.config.dropout_rate,
+                learning_rate=self.config.learning_rate
+            )
+        
+        # Train model
+        start_time = time.time()
+        
+        history = model.fit(
+            train_generator,
+            epochs=self.config.epochs,
+            validation_data=val_generator,
+            callbacks=callbacks,
+            verbose=self.config.verbose,
+            class_weight=class_weights
+        )
+        
+        # Calculate training time
+        training_time = time.time() - start_time
+        logging.info(f"Training completed in {training_time:.2f} seconds")
+        
+        # Evaluate on test set
+        from evaluation import evaluate_model
+        metrics, conf_matrix = evaluate_model(
+            model, 
+            test_generator,
+            os.path.join(self.experiment_dir, 'holdout_evaluation')
+        )
+        
+        # Add training time to metrics
+        metrics['training_time'] = training_time
+        
+        # Save training history
+        history_dict = history.history
+        with open(os.path.join(self.experiment_dir, 'training_history.json'), 'w') as f:
+            json.dump(history_dict, f)
+        
+        # Save confusion matrix
+        np.savetxt(
+            os.path.join(self.experiment_dir, 'confusion_matrix.csv'),
+            conf_matrix,
+            delimiter=','
+        )
+        
+        # Create history plots
+        from utils import save_history_plots
+        save_history_plots(history_dict, self.experiment_dir)
+        
+        # Log final results
+        logging.info("Holdout training completed. Final metrics:")
+        for metric, value in metrics.items():
+            logging.info(f"{metric}: {value:.4f}")
+        
+        # Clean up to prevent memory leaks
+        tf.keras.backend.clear_session()
+        
+        return metrics
 
     def _setup_logging(self, log_file: str) -> None:
         """Setup logging configuration"""
@@ -289,7 +427,6 @@ class Trainer:
         logging.info(f"Starting {self.config.k_folds}-fold cross validation with {self.config.model_name}")
         
         # Encode labels
-        from sklearn.preprocessing import LabelEncoder
         label_encoder = LabelEncoder()
         df['encoded_label'] = label_encoder.fit_transform(df['label'])
         class_mapping = {i: label for i, label in enumerate(label_encoder.classes_)}
@@ -302,7 +439,7 @@ class Trainer:
         # Split into train and test sets
         train_df, test_df = train_test_split(
             df, 
-            test_size=0.2, 
+            test_size=self.config.test_split, 
             stratify=df['encoded_label'], 
             random_state=42
         )
@@ -318,7 +455,6 @@ class Trainer:
         }
         
         # Initialize confusion matrix
-        from sklearn.metrics import confusion_matrix
         num_classes = len(np.unique(df['encoded_label']))
         combined_conf_matrix = np.zeros((num_classes, num_classes))
         
@@ -329,8 +465,37 @@ class Trainer:
             random_state=42
         )
         
+        # If resuming, check for existing metrics
+        if self.config.resume_training and self.config.start_fold > 0:
+            # Load existing metrics if available
+            metrics_path = os.path.join(self.experiment_dir, 'partial_metrics.json')
+            if os.path.exists(metrics_path):
+                with open(metrics_path, 'r') as f:
+                    try:
+                        saved_metrics = json.load(f)
+                        for metric, values in saved_metrics.items():
+                            if metric in all_metrics:
+                                all_metrics[metric] = values
+                        logging.info(f"Loaded metrics from previous run up to fold {self.config.start_fold}")
+                    except Exception as e:
+                        logging.warning(f"Could not load saved metrics: {e}")
+            
+            # Load existing confusion matrix if available
+            conf_matrix_path = os.path.join(self.experiment_dir, 'partial_confusion_matrix.npy')
+            if os.path.exists(conf_matrix_path):
+                try:
+                    combined_conf_matrix = np.load(conf_matrix_path)
+                    logging.info(f"Loaded confusion matrix from previous run")
+                except Exception as e:
+                    logging.warning(f"Could not load saved confusion matrix: {e}")
+        
         # Loop through folds
         for fold, (train_idx, val_idx) in enumerate(skf.split(train_df['image_path'], train_df['encoded_label'])):
+            # Skip folds that were already completed if resuming
+            if self.config.resume_training and fold < self.config.start_fold:
+                logging.info(f"Skipping fold {fold+1}/{self.config.k_folds} (already completed)")
+                continue
+                
             fold_start_time = time.time()
             logging.info(f"Starting fold {fold+1}/{self.config.k_folds}")
             
@@ -355,7 +520,7 @@ class Trainer:
                     model_name=self.config.model_name,
                     input_shape=(*self.config.image_size, 3),
                     num_classes=1,  # Binary classification
-                    dropout_rate=self.config.dropout_rate,  # Pass the dropout rate
+                    dropout_rate=self.config.dropout_rate,
                     learning_rate=self.config.learning_rate
                 )
 
@@ -390,6 +555,17 @@ class Trainer:
             # Update combined confusion matrix
             combined_conf_matrix += fold_conf_matrix
             
+            # Save partial results in case of future crashes
+            # Save current metrics
+            with open(os.path.join(self.experiment_dir, 'partial_metrics.json'), 'w') as f:
+                json.dump(all_metrics, f)
+            
+            # Save current combined confusion matrix
+            np.save(
+                os.path.join(self.experiment_dir, 'partial_confusion_matrix.npy'),
+                combined_conf_matrix
+            )
+            
             # Clean up to prevent memory leaks
             tf.keras.backend.clear_session()
             gc.collect()
@@ -397,47 +573,14 @@ class Trainer:
         # Calculate and save final metrics
         final_metrics = self._save_final_metrics(all_metrics, combined_conf_matrix)
         
-        return final_metrics
-    
-    def _save_final_metrics(self, 
-                          all_metrics: Dict[str, List[float]], 
-                          conf_matrix: np.ndarray) -> Dict[str, float]:
-        """
-        Calculate and save final metrics
+        # Remove partial result files after successful completion
+        partial_metrics_path = os.path.join(self.experiment_dir, 'partial_metrics.json')
+        partial_conf_matrix_path = os.path.join(self.experiment_dir, 'partial_confusion_matrix.npy')
         
-        Args:
-            all_metrics: Dictionary with lists of metrics from each fold
-            conf_matrix: Combined confusion matrix
-            
-        Returns:
-            Dictionary with final metric summaries
-        """
-        # Calculate mean and std for each metric
-        final_metrics = {}
+        if os.path.exists(partial_metrics_path):
+            os.remove(partial_metrics_path)
         
-        for metric, values in all_metrics.items():
-            if len(values) > 0:
-                final_metrics[f"{metric}_mean"] = np.mean(values)
-                final_metrics[f"{metric}_std"] = np.std(values)
-        
-        # Add average epoch time if available
-        if 'time_per_epoch' in all_metrics and all_metrics['time_per_epoch']:
-            final_metrics['avg_time_per_epoch'] = np.mean(all_metrics['time_per_epoch'])
-        
-        # Save metrics as CSV
-        metrics_df = pd.DataFrame([final_metrics])
-        metrics_df.to_csv(os.path.join(self.experiment_dir, 'final_metrics.csv'), index=False)
-        
-        # Save confusion matrix
-        np.savetxt(
-            os.path.join(self.experiment_dir, 'confusion_matrix.csv'),
-            conf_matrix,
-            delimiter=','
-        )
-        
-        # Log final results
-        logging.info("Cross-validation completed. Final metrics:")
-        for metric, value in final_metrics.items():
-            logging.info(f"{metric}: {value:.4f}")
+        if os.path.exists(partial_conf_matrix_path):
+            os.remove(partial_conf_matrix_path)
         
         return final_metrics

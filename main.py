@@ -60,8 +60,9 @@ def main() -> Optional[int]:
         # Create trainer
         trainer = Trainer(config)
         
-        # Run training
-        metrics = trainer.train_with_cross_validation(df)
+        # Run training - now using the unified train method that selects
+        # between cross-validation and holdout methods
+        metrics = trainer.train(df)
         
         logging.info("Training completed successfully!")
         

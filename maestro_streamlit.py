@@ -1008,6 +1008,37 @@ elif page == "Configure Experiment":
     
     # Training parameters
     st.subheader("Training Parameters")
+
+    st.subheader("Validation Strategy")
+    validation_strategy = st.radio(
+        "Validation Strategy",
+        options=["cross_validation", "holdout"],
+        format_func=lambda x: "Cross-Validation" if x == "cross_validation" else "Holdout (Train/Val Split)"
+    )
+
+    if validation_strategy == "cross_validation":
+        k_folds = st.slider("Cross-Validation Folds", min_value=2, max_value=10, value=5)
+        holdout_split = 0.2  # Default value, not shown to user
+    else:  # holdout
+        holdout_split = st.slider(
+            "Validation Split Proportion", 
+            min_value=0.1, 
+            max_value=0.4, 
+            value=0.2, 
+            step=0.05,
+            help="Proportion of training data to use for validation"
+        )
+        k_folds = 5  # Default value, not shown to user
+
+    test_split = st.slider(
+        "Test Split Proportion", 
+        min_value=0.1, 
+        max_value=0.3, 
+        value=0.2, 
+        step=0.05,
+        help="Proportion of data to use for final testing"
+    )
+
     
     col1, col2 = st.columns(2)
     
@@ -1060,7 +1091,10 @@ elif page == "Configure Experiment":
             "image_size": list(image_size),
             "batch_size": batch_size,
             "epochs": epochs,
+            "validation_strategy": validation_strategy,
             "k_folds": k_folds,
+            "holdout_split": holdout_split,
+            "test_split": test_split,
             "learning_rate": learning_rate,
             "early_stopping_patience": early_stopping_patience,
             "reduce_lr_patience": reduce_lr_patience,
