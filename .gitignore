@@ -49,6 +49,7 @@ experiments/
 results/
 trained_models/
 outputs/
+evaluation_results/
 
 # Data files - avoid storing data in Git
 data/
