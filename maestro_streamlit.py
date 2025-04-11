@@ -40,10 +40,9 @@ st.title("🧠 Maestro")
 st.markdown("A framework for image classification experiments with TensorFlow")
 
 # Sidebar for navigation
-st.sidebar.title("Navigation")
 page = st.sidebar.selectbox(
     "Select a page", 
-    ["Dashboard", "Configure Experiment", "Training", "Results Viewer"]
+    ["Dashboard", "Configure Experiment", "Training", "Model Evaluation", "Results Viewer"]
 )
 
 # Check and display GPU availability
@@ -1204,3 +1203,425 @@ elif page == "Results Viewer":
 if "page" in st.session_state and st.session_state["page"] != page:
     page = st.session_state["page"]
     st.experimental_rerun()
+
+
+# Model Evaluation page
+elif page == "Model Evaluation":
+    st.header("Model Evaluation")
+    
+    # Create tabs for "Run Evaluation" and "Browse Results"
+    eval_tab, results_tab = st.tabs(["Run Evaluation", "Browse Evaluation Results"])
+    
+    with eval_tab:
+        # Get list of trained models
+        model_files = []
+        for exp in get_available_experiments():
+            exp_dir = Path(f"./results/{exp}")
+            # Look for .keras or .h5 model files
+            for model_file in exp_dir.glob("**/*.keras"):
+                model_files.append((exp, str(model_file)))
+            for model_file in exp_dir.glob("**/*.h5"):
+                model_files.append((exp, str(model_file)))
+        
+        if not model_files:
+            st.info("No trained models found. Train a model first.")
+        else:
+            # Select model
+            model_options = [f"{exp}: {os.path.basename(path)}" for exp, path in model_files]
+            selected_model_idx = st.selectbox(
+                "Select Model", 
+                range(len(model_options)),
+                format_func=lambda i: model_options[i]
+            )
+            selected_experiment, selected_model_path = model_files[selected_model_idx]
+        
+        # Display model information
+        st.write(f"**Selected Model:** {os.path.basename(selected_model_path)}")
+        st.write(f"**From Experiment:** {selected_experiment}")
+        
+        # Load experiment config if available
+        exp_config_path = os.path.join(os.path.dirname(os.path.dirname(selected_model_path)), "config.json")
+        if os.path.exists(exp_config_path):
+            try:
+                with open(exp_config_path, 'r') as f:
+                    config = json.load(f)
+                st.write("**Original Training Configuration:**")
+                config_df = pd.DataFrame.from_dict(config, orient="index", columns=["Value"])
+                safe_display_dataframe(config_df)
+            except Exception as e:
+                st.warning(f"Could not load experiment configuration: {e}")
+        
+        # Input for evaluation dataset
+        st.subheader("Evaluation Dataset")
+        eval_data_path = st.text_input("Evaluation Data Directory Path", value="./eval_data")
+        
+        if st.button("Explore Evaluation Dataset"):
+            enhanced_dataset_visualization(eval_data_path)
+        
+        # Evaluation options
+        st.subheader("Evaluation Options")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            batch_size = st.select_slider(
+                "Batch Size",
+                options=[8, 16, 32, 64, 128],
+                value=32
+            )
+        
+        with col2:
+            # Use same image size selection logic as in Configure Experiment
+            image_size_options = ["224×224", "256×256", "299×299", "331×331", "384×384", "512×512"]
+            image_size_map = {
+                "224×224": (224, 224),
+                "256×256": (256, 256),
+                "299×299": (299, 299),
+                "331×331": (331, 331),
+                "384×384": (384, 384),
+                "512×512": (512, 512)
+            }
+            image_size_selection = st.selectbox(
+                "Image Size",
+                options=image_size_options,
+                index=0
+            )
+            image_size = image_size_map[image_size_selection]
+        
+        # Evaluation name and output directory
+        eval_name = st.text_input(
+            "Evaluation Name (Optional)",
+            value="",
+            help="Custom name for this evaluation run (leave empty for auto-generated name)"
+        )
+        
+        output_base_dir = st.text_input(
+            "Base Results Directory", 
+            value="./evaluation_results"
+        )
+        
+        # Run evaluation button
+        if st.button("Run Evaluation", type="primary"):
+            # Build command
+            cmd = [
+                sys.executable, 
+                "evaluate.py", 
+                "--model-path", selected_model_path,
+                "--data-path", eval_data_path,
+                "--output-dir", output_base_dir,
+                "--batch-size", str(batch_size),
+                "--image-size", str(image_size[0]), str(image_size[1])
+            ]
+            
+            # Add name if provided
+            if eval_name:
+                cmd.extend(["--name", eval_name])
+            
+            # Check for class mapping file
+            class_mapping_path = os.path.join(os.path.dirname(os.path.dirname(selected_model_path)), "class_mapping.txt")
+            if os.path.exists(class_mapping_path):
+                cmd.extend(["--class-mapping", class_mapping_path])
+            
+            # Add model config if available
+            if os.path.exists(exp_config_path):
+                cmd.extend(["--model-config", exp_config_path])
+            
+            # Display the command
+            st.code(" ".join(cmd), language="bash")
+            
+            # Run evaluation
+            with st.spinner("Evaluating model..."):
+                process = subprocess.Popen(
+                    cmd, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    bufsize=1
+                )
+                
+                # Create an empty placeholder for the log
+                log_output = st.empty()
+                
+                # Stream the output
+                full_log = ""
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        full_log += output
+                        log_output.code(full_log, language="bash")
+                
+                # Get return code
+                return_code = process.poll()
+                
+                if return_code == 0:
+                    st.success("Evaluation completed successfully!")
+                    
+                    # Find the evaluation directory
+                    # Parse output to find the actual evaluation directory that was created
+                    eval_output_dir = None
+                    for line in full_log.split('\n'):
+                        if "Evaluating model" in line:
+                            # Look for the previous line which might have the output directory
+                            log_lines = full_log.split('\n')
+                            for i, log_line in enumerate(log_lines):
+                                if "Evaluating model" in log_line and i > 0:
+                                    # Check a few lines before for directory creation
+                                    for j in range(max(0, i-5), i):
+                                        if output_base_dir in log_lines[j]:
+                                            # Extract the path - this is a rough heuristic
+                                            parts = log_lines[j].split(output_base_dir)
+                                            if len(parts) > 1:
+                                                subdir = parts[1].strip()
+                                                if subdir.startswith('/') or subdir.startswith('\\'):
+                                                    subdir = subdir[1:]
+                                                eval_output_dir = os.path.join(output_base_dir, subdir)
+                                                break
+                    
+                    # If we couldn't extract from logs, look for the most recent directory
+                    if not eval_output_dir:
+                        try:
+                            base_dir = Path(output_base_dir)
+                            if base_dir.exists():
+                                # Get all subdirectories and sort by creation time (newest first)
+                                subdirs = [d for d in base_dir.iterdir() if d.is_dir()]
+                                if subdirs:
+                                    subdirs.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                                    eval_output_dir = str(subdirs[0])
+                        except Exception as e:
+                            st.warning(f"Could not determine evaluation directory: {e}")
+                            eval_output_dir = output_base_dir
+                    
+                    if not eval_output_dir:
+                        eval_output_dir = output_base_dir
+                    
+                    st.info(f"Evaluation results saved to: {eval_output_dir}")
+                    
+                    # Display results if available
+                    results_path = os.path.join(eval_output_dir, "evaluation_metrics.json")
+                    if os.path.exists(results_path):
+                        with open(results_path, 'r') as f:
+                            results = json.load(f)
+                        
+                        st.subheader("Evaluation Results")
+                        
+                        # Display metrics as gauges
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        # Helper function to create a gauge (same as in results viewer)
+                        def create_metric_gauge(value, title, column):
+                            fig = go.Figure(go.Indicator(
+                                mode="gauge+number",
+                                value=value,
+                                title={"text": title},
+                                gauge={
+                                    "axis": {"range": [0, 1]},
+                                    "bar": {"color": "darkblue"},
+                                    "steps": [
+                                        {"range": [0, 0.5], "color": "lightgray"},
+                                        {"range": [0.5, 0.75], "color": "gray"},
+                                        {"range": [0.75, 1], "color": "lightblue"}
+                                    ]
+                                }
+                            ))
+                            fig.update_layout(height=250, width=250)
+                            column.plotly_chart(fig, use_container_width=True)
+                        
+                        # Create gauges for key metrics
+                        if "accuracy" in results:
+                            create_metric_gauge(results["accuracy"], "Accuracy", col1)
+                        if "precision" in results:
+                            create_metric_gauge(results["precision"], "Precision", col2)
+                        if "recall" in results:
+                            create_metric_gauge(results["recall"], "Recall", col3)
+                        if "auc" in results:
+                            create_metric_gauge(results["auc"], "AUC", col4)
+                        
+                        # Show full metrics
+                        st.write("**Full Metrics:**")
+                        metrics_df = pd.DataFrame.from_dict(results, orient="index", columns=["Value"])
+                        safe_display_dataframe(metrics_df)
+                        
+                        # Show confusion matrix if available
+                        confusion_matrix_img = os.path.join(eval_output_dir, "confusion_matrix.png")
+                        if os.path.exists(confusion_matrix_img):
+                            st.write("**Confusion Matrix:**")
+                            st.image(confusion_matrix_img, use_column_width=True)
+                            
+                        # Show ROC curve if available
+                        roc_curve_img = os.path.join(eval_output_dir, "roc_curve.png")
+                        if os.path.exists(roc_curve_img):
+                            st.write("**ROC Curve:**")
+                            st.image(roc_curve_img, use_column_width=True)
+                            
+                        # Show precision-recall curve if available
+                        pr_curve_img = os.path.join(eval_output_dir, "precision_recall_curve.png")
+                        if os.path.exists(pr_curve_img):
+                            st.write("**Precision-Recall Curve:**")
+                            st.image(pr_curve_img, use_column_width=True)
+                    else:
+                        st.warning("Evaluation results file not found")
+                else:
+                    error = process.stderr.read()
+                    st.error(f"Evaluation failed with return code {return_code}. Error: {error}")
+    
+    # Browse evaluation results tab
+    with results_tab:
+        st.subheader("Browse Evaluation Results")
+        
+        # Function to get all evaluation directories
+        @st.cache_data(ttl=60)  # Cache for 1 minute
+        def get_evaluation_results(base_dir="./evaluation_results"):
+            if not os.path.exists(base_dir):
+                return []
+                
+            results = []
+            base_path = Path(base_dir)
+            
+            # Get all subdirectories
+            for subdir in base_path.glob("*"):
+                if subdir.is_dir():
+                    # Check if it contains evaluation metrics
+                    metrics_file = subdir / "evaluation_metrics.json"
+                    if metrics_file.exists():
+                        # Get creation time and format as string
+                        created = time.strftime(
+                            "%Y-%m-%d %H:%M:%S", 
+                            time.localtime(os.path.getmtime(subdir))
+                        )
+                        
+                        # Get model name if available
+                        model_name = "Unknown"
+                        params_file = subdir / "evaluation_params.json"
+                        if params_file.exists():
+                            try:
+                                with open(params_file, 'r') as f:
+                                    params = json.load(f)
+                                    if "model_path" in params:
+                                        model_name = os.path.basename(os.path.dirname(os.path.dirname(params["model_path"])))
+                            except:
+                                pass
+                        
+                        results.append({
+                            "name": subdir.name,
+                            "path": str(subdir),
+                            "created": created,
+                            "model": model_name
+                        })
+            
+            # Sort by creation time (newest first)
+            results.sort(key=lambda x: x["created"], reverse=True)
+            return results
+        
+        # Get list of evaluation results
+        eval_base_dir = st.text_input("Evaluation Results Directory", value="./evaluation_results")
+        if st.button("Refresh Evaluation Results"):
+            st.cache_data.clear()
+        
+        evaluation_results = get_evaluation_results(eval_base_dir)
+        
+        if not evaluation_results:
+            st.info(f"No evaluation results found in {eval_base_dir}. Run an evaluation first.")
+        else:
+            # Show evaluation results in a searchable table
+            st.write(f"Found {len(evaluation_results)} evaluation results:")
+            
+            # Create a DataFrame for display
+            results_df = pd.DataFrame(evaluation_results)
+            
+            # Add search functionality
+            search_term = st.text_input("Search Evaluations", value="")
+            if search_term:
+                results_df = results_df[
+                    results_df["name"].str.contains(search_term, case=False) |
+                    results_df["model"].str.contains(search_term, case=False)
+                ]
+            
+            # Display results table
+            st.dataframe(results_df[["name", "model", "created"]], use_container_width=True)
+            
+            # Select evaluation to view
+            selected_eval = st.selectbox(
+                "Select Evaluation to View",
+                options=range(len(results_df)),
+                format_func=lambda i: f"{results_df.iloc[i]['name']} ({results_df.iloc[i]['created']})"
+            )
+            
+            # Display selected evaluation results
+            if st.button("View Selected Evaluation"):
+                eval_path = results_df.iloc[selected_eval]["path"]
+                st.write(f"**Viewing evaluation: {results_df.iloc[selected_eval]['name']}**")
+                
+                # Load and display metrics
+                metrics_file = os.path.join(eval_path, "evaluation_metrics.json")
+                if os.path.exists(metrics_file):
+                    with open(metrics_file, 'r') as f:
+                        metrics = json.load(f)
+                    
+                    # Display metrics as gauges
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    # Helper function to create a gauge
+                    def create_metric_gauge(value, title, column):
+                        fig = go.Figure(go.Indicator(
+                            mode="gauge+number",
+                            value=value,
+                            title={"text": title},
+                            gauge={
+                                "axis": {"range": [0, 1]},
+                                "bar": {"color": "darkblue"},
+                                "steps": [
+                                    {"range": [0, 0.5], "color": "lightgray"},
+                                    {"range": [0.5, 0.75], "color": "gray"},
+                                    {"range": [0.75, 1], "color": "lightblue"}
+                                ]
+                            }
+                        ))
+                        fig.update_layout(height=250, width=250)
+                        column.plotly_chart(fig, use_container_width=True)
+                    
+                    # Create gauges for key metrics
+                    if "accuracy" in metrics:
+                        create_metric_gauge(metrics["accuracy"], "Accuracy", col1)
+                    if "precision" in metrics:
+                        create_metric_gauge(metrics["precision"], "Precision", col2)
+                    if "recall" in metrics:
+                        create_metric_gauge(metrics["recall"], "Recall", col3)
+                    if "auc" in metrics:
+                        create_metric_gauge(metrics["auc"], "AUC", col4)
+                    
+                    # Show full metrics
+                    st.write("**Full Metrics:**")
+                    metrics_df = pd.DataFrame.from_dict(metrics, orient="index", columns=["Value"])
+                    safe_display_dataframe(metrics_df)
+                
+                # Display visualizations
+                st.write("**Visualizations:**")
+                viz_col1, viz_col2 = st.columns(2)
+                
+                # Confusion matrix
+                confusion_matrix_img = os.path.join(eval_path, "confusion_matrix.png")
+                if os.path.exists(confusion_matrix_img):
+                    viz_col1.write("**Confusion Matrix:**")
+                    viz_col1.image(confusion_matrix_img, use_column_width=True)
+                
+                # ROC curve
+                roc_curve_img = os.path.join(eval_path, "roc_curve.png")
+                if os.path.exists(roc_curve_img):
+                    viz_col2.write("**ROC Curve:**")
+                    viz_col2.image(roc_curve_img, use_column_width=True)
+                
+                # Precision-recall curve
+                pr_curve_img = os.path.join(eval_path, "precision_recall_curve.png")
+                if os.path.exists(pr_curve_img):
+                    viz_col1.write("**Precision-Recall Curve:**")
+                    viz_col1.image(pr_curve_img, use_column_width=True)
+                
+                # Display parameters used for this evaluation
+                params_file = os.path.join(eval_path, "evaluation_params.json")
+                if os.path.exists(params_file):
+                    st.write("**Evaluation Parameters:**")
+                    with open(params_file, 'r') as f:
+                        params = json.load(f)
+                    params_df = pd.DataFrame.from_dict(params, orient="index", columns=["Value"])
+                    safe_display_dataframe(params_df)
