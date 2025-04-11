@@ -1,95 +1,252 @@
-# Maestro
+# Maestro: Deep Learning Pipeline Framework
 
-## Project Overview
+<div align="center">
 
-Maestro is a comprehensive, production-ready pipeline for training deep learning models.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![TensorFlow 2.19.0](https://img.shields.io/badge/tensorflow-2.19.0-orange.svg)](https://www.tensorflow.org/)
 
-## Key Features
+**A Comprehensive Framework for Training and Evaluating Deep Learning Models**
+</div>
 
-### Architecture
-- **Modular Design**: Clean separation of concerns across multiple Python modules
-- **Object-Oriented**: Encapsulated functionality in well-designed classes
-- **Flexible Configuration**: Support for command-line and JSON-based configuration
+## Overview
 
-### Model Training
-- **Transfer Learning**: Leverages pre-trained models (ResNet, Xception, DenseNet, etc.)
-- **Cross-Validation**: Implements stratified k-fold cross-validation
-- **Class Imbalance Handling**: Automatic computation of class weights
-- **Early Stopping**: Prevents overfitting by monitoring validation metrics
-- **Learning Rate Scheduling**: Reduces learning rate on plateaus
-- **Mixed Precision Training**: Improves performance on compatible GPUs
+Maestro is a production-ready framework for building, training, and evaluating deep learning models with a focus on image classification tasks. It provides a robust, modular architecture that handles the full machine learning lifecycle while following best practices in deep learning engineering.
 
-### Distributed Computing
-- **Multi-GPU Support**: Scales across multiple GPUs on a single machine
-- **Distributed Training**: Supports multi-node distributed training
-- **Memory Optimization**: Careful management of GPU memory growth
+### Key Features
 
-### Data Handling
-- **Data Augmentation**: Implements rotation, zoom, flip, and other transformations
-- **Efficient Data Loading**: Optimized data loading with proper worker configuration
-- **Validation**: Robust error handling for data loading issues
+- **Modular and Extensible Design**: Clean architecture with separation of concerns
+- **Automated Cross-Validation**: Supports both k-fold cross-validation and holdout validation
+- **Transfer Learning**: Leverages pre-trained models from the Keras Applications API
+- **Advanced Training Features**:
+  - Learning rate scheduling
+  - Early stopping
+  - Class imbalance handling
+  - Mixed precision training
+- **Comprehensive Metrics**: Accuracy, precision, recall, F1-score, AUC, and more
+- **Hardware Optimization**: Support for multi-GPU setups and memory optimization
+- **Experiment Tracking**: Records all parameters, metrics, and results for reproducibility
+- **Interactive UI**: Streamlit-based interface for configuration, training, and visualization
 
-### Evaluation & Visualization
-- **Comprehensive Metrics**: Accuracy, precision, recall, F1-score, AUC, Cohen's kappa
-- **Visualizations**: Confusion matrices, ROC curves, precision-recall curves
-- **TensorBoard Integration**: Real-time monitoring of training progress
+## Installation
 
-### Experiment Management
-- **Experiment Tracking**: Records all configuration parameters, system info, and results
-- **Reproducibility**: Ensures experiments can be reproduced through saved configurations
-- **Unique Experiment Directories**: Organized storage of all artifacts and results
+### Prerequisites
 
-## Code Organization
+- Python 3.8+
+- CUDA-compatible GPU (recommended)
 
+### Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/maestro.git
+cd maestro
 ```
-maestro/
-├── config.py               # Configuration management
-├── data.py                 # Data loading and preprocessing
-├── models.py               # Model architecture definitions
-├── training.py             # Training pipeline
-├── evaluation.py           # Evaluation metrics and visualization
-├── maestro_streamlit.py    # Streamlit GUI
-├── utils.py                # Utility functions and experiment tracking
-└── main.py                 # Entry point
+
+2. Create a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
 ## Usage
 
-### Basic Usage
+### Command Line Interface
+
+Train a model with specific parameters:
+
 ```bash
-python maestro.py --model ResNet50 --data-path /path/to/data --image-size 224 224 --batch-size 32
+python main.py --model ResNet50 --data-path /path/to/data --image-size 224 224 --batch-size 32
 ```
 
-### Using Configuration File
+Train using a configuration file:
+
 ```bash
-python maestro.py --config experiment_config.json
+python main.py --config configs/my_config.json
 ```
 
-## Extending the Framework
+Evaluate a trained model:
+
+```bash
+python evaluate.py --model-path results/ResNet50_20250403-150211/fold_1/best_model.keras --data-path /path/to/test_data
+```
+
+### Interactive UI
+
+Launch the Streamlit interface for a more user-friendly experience:
+
+```bash
+streamlit run maestro_streamlit.py
+```
+
+The UI provides:
+- Dataset exploration and visualization
+- Model configuration with interactive controls
+- Training monitoring
+- Results visualization
+- Model evaluation
+
+## Configuration Options
+
+Maestro supports extensive configuration through both command-line arguments and JSON files:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `model_name` | Model architecture to use | Required |
+| `data_path` | Path to dataset directory | Required |
+| `image_size` | Image dimensions (height, width) | (224, 224) |
+| `batch_size` | Batch size for training | 32 |
+| `epochs` | Maximum number of epochs | 100 |
+| `validation_strategy` | "cross_validation" or "holdout" | "cross_validation" |
+| `k_folds` | Number of folds for cross-validation | 5 |
+| `holdout_split` | Proportion for validation when using holdout | 0.2 |
+| `test_split` | Proportion for test set | 0.2 |
+| `learning_rate` | Initial learning rate | 0.0001 |
+| `dropout_rate` | Dropout rate for regularization | 0.5 |
+| `early_stopping_patience` | Patience for early stopping | 10 |
+| `reduce_lr_patience` | Patience for reducing learning rate | 5 |
+| `mixed_precision` | Enable mixed precision training | True |
+| `save_dir` | Directory to save results | "./results" |
+| `verbose` | Verbosity level (0, 1, or 2) | 1 |
+
+## Dataset Structure
+
+Maestro expects datasets to be organized with the following structure:
+
+```
+data_directory/
+├── class_1/
+│   ├── image1.jpg
+│   ├── image2.jpg
+│   └── ...
+├── class_2/
+│   ├── image1.jpg
+│   ├── image2.jpg
+│   └── ...
+└── ...
+```
+
+## Supported Models
+
+Maestro supports the following model architectures:
+
+- ResNet50, ResNet101
+- Xception
+- VGG16, VGG19
+- DenseNet121, DenseNet201
+- MobileNet, MobileNetV2
+- EfficientNetB3
+
+## Output Structure
+
+Maestro organizes training results in the following structure:
+
+```
+results/
+└── ModelName_YYYYMMDD-HHMMSS/
+    ├── config.json
+    ├── experiment_results.json
+    ├── class_mapping.txt
+    ├── fold_1/
+    │   ├── best_model.keras
+    │   ├── confusion_matrix.png
+    │   ├── roc_curve.png
+    │   └── ...
+    ├── fold_2/
+    │   └── ...
+    └── ...
+```
+
+## Extending Maestro
 
 ### Adding New Models
-Extend the `AVAILABLE_MODELS` dictionary in the `ModelFactory` class.
+
+Extend the `ModelFactory` class in `models.py` by adding your model to the `AVAILABLE_MODELS` dictionary:
+
+```python
+AVAILABLE_MODELS = {
+    "Xception": Xception,
+    "ResNet50": ResNet50,
+    # Add your model here
+    "MyNewModel": MyNewModelFunction
+}
+```
 
 ### Custom Data Preprocessing
-Modify the data generators in the training module or extend the data loading functions.
 
-### Custom Loss Functions
-Implement new loss functions and add them to the model compilation step.
+Modify the data generators in `training.py` to add custom preprocessing:
 
-## Technical Details
+```python
+train_datagen = ImageDataGenerator(
+    rotation_range=20,
+    width_shift_range=0.2,
+    # Add custom preprocessing
+    preprocessing_function=my_custom_preprocessing
+)
+```
 
-- **Language & Framework**: Python with TensorFlow/Keras
-- **Required Libraries**: TensorFlow, scikit-learn, pandas, matplotlib, seaborn, psutil
-- **Hardware Requirements**: Compatible with CPU and GPU setups, optimized for NVIDIA GPUs
-- **Input Data Format**: Directory structure with class subdirectories containing images
+## Examples
 
-## Implementation Notes
+### Basic Training Example
 
-The framework is designed with best practices in machine learning engineering:
-- Strong typing with Python type hints
-- Comprehensive docstrings
-- Robust error handling
-- Memory management for long training runs
-- Scalability from single GPU to multi-node setups
+```python
+from config import TrainingConfig
+from data import load_image_data
+from training import Trainer
 
-Maestro serves as both a practical tool for medical image classification tasks and an educational resource for deep learning practitioners seeking to understand proper pipeline architecture.
+# Create configuration
+config = TrainingConfig(
+    model_name="ResNet50",
+    data_path="./datasets/images",
+    image_size=(224, 224),
+    batch_size=32,
+    epochs=100
+)
+
+# Load data
+df = load_image_data(config.data_path)
+
+# Create trainer and run training
+trainer = Trainer(config)
+metrics = trainer.train(df)
+
+print(f"Final validation accuracy: {metrics['accuracy_mean']:.4f}")
+```
+
+### Evaluation Example
+
+```python
+import tensorflow as tf
+from evaluation import evaluate_model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Load model
+model = tf.keras.models.load_model("./results/mymodel/best_model.keras")
+
+# Create test data generator
+test_datagen = ImageDataGenerator(rescale=1./255)
+test_generator = test_datagen.flow_from_directory(
+    "./data/test",
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode="binary",
+    shuffle=False
+)
+
+# Evaluate model
+metrics, conf_matrix = evaluate_model(model, test_generator, "./evaluation_results")
+print(f"Test accuracy: {metrics['accuracy']:.4f}")
+```
+
+## Contributing
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to Maestro.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
