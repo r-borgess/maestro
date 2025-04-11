@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="assets/images/SVG/logo-full.svg" alt="maestro logo" width="200">
+    <img src="assets/images/SVG/logo-full.svg" alt="maestro logo" width="1000">
 </div>
 
 # maestro: Deep Learning Pipeline Framework
