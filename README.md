@@ -1,4 +1,8 @@
-# Maestro: Deep Learning Pipeline Framework
+<div align="center">
+    <img src="assets/images/SVG/logo-full.svg" alt="maestro logo" width="200">
+</div>
+
+# maestro: Deep Learning Pipeline Framework
 
 <div align="center">
 
@@ -11,7 +15,7 @@
 
 ## Overview
 
-Maestro is a production-ready framework for building, training, and evaluating deep learning models with a focus on image classification tasks. It provides a robust, modular architecture that handles the full machine learning lifecycle while following best practices in deep learning engineering.
+maestro is a production-ready framework for building, training, and evaluating deep learning models with a focus on image classification tasks. It provides a robust, modular architecture that handles the full machine learning lifecycle while following best practices in deep learning engineering.
 
 ### Key Features
 
@@ -93,7 +97,7 @@ The UI provides:
 
 ## Configuration Options
 
-Maestro supports extensive configuration through both command-line arguments and JSON files:
+maestro supports extensive configuration through both command-line arguments and JSON files:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -116,7 +120,7 @@ Maestro supports extensive configuration through both command-line arguments and
 
 ## Dataset Structure
 
-Maestro expects datasets to be organized with the following structure:
+maestro expects datasets to be organized with the following structure:
 
 ```
 data_directory/
@@ -133,7 +137,7 @@ data_directory/
 
 ## Supported Models
 
-Maestro supports the following model architectures:
+maestro supports the following model architectures:
 
 - ResNet50, ResNet101
 - Xception
@@ -144,7 +148,7 @@ Maestro supports the following model architectures:
 
 ## Output Structure
 
-Maestro organizes training results in the following structure:
+maestro organizes training results in the following structure:
 
 ```
 results/
@@ -162,7 +166,7 @@ results/
     └── ...
 ```
 
-## Extending Maestro
+## Extending maestro
 
 ### Adding New Models
 
@@ -245,7 +249,7 @@ print(f"Test accuracy: {metrics['accuracy']:.4f}")
 
 ## Contributing
 
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to Maestro.
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to maestro.
 
 ## License
 
